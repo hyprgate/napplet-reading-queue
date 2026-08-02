@@ -1,7 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { inc as ipc } from '@napplet/sdk';
-  import { READING_QUEUE_ADD_TOPIC, parseReadingQueueAddPayload } from '@hyprgate/utils';
+  import { inc as ipc, intent } from '@napplet/sdk';
+  import { createIntentRequest, parseIntentResult, type IntentRequest } from '@hyprgate/types';
+  import {
+    READING_QUEUE_ADD_TOPIC,
+    createNoteViewerOpenIntentRequest,
+    createNoteViewerOpenPayload,
+    createProfileIntentRequest,
+    parseReadingQueueAddPayload,
+  } from '@hyprgate/utils';
   import {
     addQueueItem,
     groupedQueueItems,
@@ -29,8 +36,8 @@
     restoreQueueState().then((restored) => {
       state = restored;
     });
-    const sub = ipc.on(READING_QUEUE_ADD_TOPIC, (payload) => {
-      const capture = parseReadingQueueAddPayload(payload);
+    const sub = ipc.on(READING_QUEUE_ADD_TOPIC, (event) => {
+      const capture = parseReadingQueueAddPayload(event.payload);
       if (!capture) return;
       state = addQueueItem(state, capture);
       persistQueueState(state);
@@ -67,20 +74,43 @@
     persistQueueState(state);
   }
 
-  function openItem(item: QueueItem): void {
+  async function invokeNavigation(request: IntentRequest | null): Promise<void> {
+    if (!request) return;
+    try {
+      const result = parseIntentResult(await intent.invoke(request));
+      if (!result || result.archetype !== request.archetype || result.action !== (request.action ?? 'open')) return;
+      if (!result.ok || !result.handled) return;
+    } catch {
+      // Keep the existing no-op behavior when navigation is unavailable.
+    }
+  }
+
+  async function openItem(item: QueueItem): Promise<void> {
     if (item.type === 'profile') {
-      ipc.emit('profile:open', [], JSON.stringify({ pubkey: item.target }));
+      await invokeNavigation(createProfileIntentRequest({ pubkey: item.target }));
       return;
     }
     if (item.type === 'note') {
-      ipc.emit('note:open', [], JSON.stringify({ target: item.target }));
+      const payload = createNoteViewerOpenPayload({
+        target: { type: 'event', id: item.target },
+        source: { napplet: 'reading-queue' },
+      });
+      await invokeNavigation(payload ? createNoteViewerOpenIntentRequest(payload) : null);
       return;
     }
     if (item.type === 'relay') {
-      ipc.emit('relay-browser:inspect', [], JSON.stringify({ relay: item.target }));
+      await invokeNavigation(createIntentRequest({
+        archetype: 'relay-browser',
+        action: 'inspect',
+        payload: { relay: item.target },
+      }));
       return;
     }
-    ipc.emit('reading-queue:open-target', [], JSON.stringify({ type: item.type, target: item.target }));
+    await invokeNavigation(createIntentRequest({
+      archetype: 'reading-queue',
+      action: 'open-target',
+      payload: { type: item.type, target: item.target },
+    }));
   }
 </script>
 
