@@ -3,6 +3,7 @@
   import { inc as ipc, intent } from '@napplet/sdk';
   import { createIntentRequest, parseIntentResult, type IntentRequest } from '@hyprgate/types';
   import {
+    invokeNappletIntent,
     READING_QUEUE_ADD_TOPIC,
     createNoteViewerOpenIntentRequest,
     createNoteViewerOpenPayload,
@@ -77,9 +78,9 @@
   async function invokeNavigation(request: IntentRequest | null): Promise<void> {
     if (!request) return;
     try {
-      const result = parseIntentResult(await intent.invoke(request));
+      const result = parseIntentResult(await invokeNappletIntent(request));
       if (!result || result.archetype !== request.archetype || result.action !== (request.action ?? 'open')) return;
-      if (!result.ok || !result.handled) return;
+      if (!result.ok) return;
     } catch {
       // Keep the existing no-op behavior when navigation is unavailable.
     }
