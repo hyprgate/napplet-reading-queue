@@ -3,6 +3,9 @@ import { storage } from '@napplet/sdk';
 import {
   READING_QUEUE_KEY,
   addQueueItem,
+  hasPlaceholderTitle,
+  removeQueueItem,
+  restoreQueueItem,
   createInitialQueueState,
   groupedQueueItems,
   persistQueueState,
@@ -33,7 +36,7 @@ describe('reading queue store', () => {
     expect(groupedQueueItems(state)).toEqual([]);
   });
 
-  it('adds queue captures and groups them by type', () => {
+  it('adds queue captures and groups them by status', () => {
     const state = addQueueItem(createInitialQueueState(), {
       type: 'note',
       target: 'note1realcapture',
@@ -41,7 +44,7 @@ describe('reading queue store', () => {
       source: { napplet: 'feed' },
     }, 42);
 
-    expect(groupedQueueItems(state)[0]?.type).toBe('note');
+    expect(groupedQueueItems(state)[0]?.status).toBe('queued');
     expect(selectedQueueItem(state)?.source).toBe('feed');
   });
 
@@ -92,5 +95,32 @@ describe('reading queue store', () => {
     persistQueueState(state);
 
     expect(storage.setItem).toHaveBeenCalledWith(READING_QUEUE_KEY, JSON.stringify(state));
+  });
+
+  it('keeps the selection on an item the filter shows', () => {
+    let state = addQueueItem(createInitialQueueState(), { type: 'note', target: 'a', title: 'A' }, 1);
+    state = addQueueItem(state, { type: 'relay', target: 'wss://b', title: 'B' }, 2);
+
+    expect(selectedQueueItem({ ...state, filter: 'note' })?.target).toBe('a');
+  });
+
+  it('groups by status with pinned first, and removal can be undone', () => {
+    let state = addQueueItem(createInitialQueueState(), { type: 'note', target: 'a', title: 'A' }, 1);
+    state = addQueueItem(state, { type: 'note', target: 'b', title: 'B' }, 2);
+    const first = state.items.find((item) => item.target === 'a')!;
+    state = setQueueItemStatus(state, first.id, 'pinned');
+
+    expect(groupedQueueItems(state).map((group) => group.status)).toEqual(['pinned', 'queued']);
+
+    const removed = removeQueueItem(state, first.id);
+    expect(removed.items.map((item) => item.target)).toEqual(['b']);
+    expect(restoreQueueItem(removed, first).items).toHaveLength(2);
+  });
+
+  it('knows when a title is just the raw target', () => {
+    const long = 'n'.repeat(60);
+    const state = addQueueItem(createInitialQueueState(), { type: 'note', target: long }, 1);
+    expect(hasPlaceholderTitle(state.items[0]!)).toBe(true);
+    expect(hasPlaceholderTitle({ title: 'My title', target: long })).toBe(false);
   });
 });

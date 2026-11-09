@@ -9,8 +9,8 @@ export default defineConfig({
     svelte(),
     nip5aManifest({
       nappletType: 'reading-queue',
-      requires: ['identity', 'relay', 'inc', 'storage'],
-      optional: ['theme'],
+      requires: ['identity', 'relay', 'inc', 'storage', 'resource'],
+      optional: ['theme', 'link'],
       icon: { data: readFileSync(new URL('./icon.png', import.meta.url)), mimeType: 'image/png' },
       artifactMode: 'single-file',
     }),

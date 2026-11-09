@@ -56,18 +56,49 @@ export function visibleQueueItems(state: QueueState): QueueItem[] {
   });
 }
 
-export function groupedQueueItems(state: QueueState): Array<{ type: QueueItemType; items: QueueItem[] }> {
-  const groups = new Map<QueueItemType, QueueItem[]>();
+export const STATUS_LABELS: Record<QueueItemStatus, string> = {
+  pinned: 'Pinned',
+  queued: 'To read',
+  deferred: 'Later',
+  done: 'Done',
+};
+
+/** Grouped by what's left to do. Type is the filter's job, so it isn't repeated here. */
+export function groupedQueueItems(state: QueueState): Array<{ status: QueueItemStatus; items: QueueItem[] }> {
+  const groups = new Map<QueueItemStatus, QueueItem[]>();
   for (const item of visibleQueueItems(state)) {
-    const existing = groups.get(item.type) ?? [];
-    existing.push(item);
-    groups.set(item.type, existing);
+    groups.set(item.status, [...(groups.get(item.status) ?? []), item]);
   }
-  return Array.from(groups.entries()).map(([type, items]) => ({ type, items }));
+  return Array.from(groups.entries()).map(([status, items]) => ({ status, items }));
 }
 
+/** Always one of the items the filter shows. */
 export function selectedQueueItem(state: QueueState): QueueItem | null {
-  return state.items.find((item) => item.id === state.selectedId) ?? visibleQueueItems(state)[0] ?? null;
+  const visible = visibleQueueItems(state);
+  return visible.find((item) => item.id === state.selectedId) ?? visible[0] ?? null;
+}
+
+export function queueTypeCounts(items: QueueItem[]): Partial<Record<QueueItemType, number>> {
+  const counts: Partial<Record<QueueItemType, number>> = {};
+  for (const item of items) counts[item.type] = (counts[item.type] ?? 0) + 1;
+  return counts;
+}
+
+export function removeQueueItem(state: QueueState, itemId: string): QueueState {
+  return {
+    ...state,
+    items: state.items.filter((item) => item.id !== itemId),
+    selectedId: state.selectedId === itemId ? null : state.selectedId,
+  };
+}
+
+export function restoreQueueItem(state: QueueState, item: QueueItem): QueueState {
+  return { ...state, items: normalizeItems([item, ...state.items]), selectedId: item.id };
+}
+
+/** True when an item still has the raw target as its title, so a lookup can do better. */
+export function hasPlaceholderTitle(item: Pick<QueueItem, 'title' | 'target'>): boolean {
+  return item.title === item.target || item.title === placeholderTitle(item.target);
 }
 
 export function setQueueItemStatus(state: QueueState, itemId: string, status: QueueItemStatus): QueueState {
@@ -145,8 +176,12 @@ export function persistQueueState(state: QueueState): void {
   });
 }
 
+function placeholderTitle(target: string): string {
+  return target.length > 32 ? `${target.slice(0, 32)}...` : target;
+}
+
 function fallbackTitle(payload: ReadingQueueAddPayload): string {
-  return payload.target.length > 32 ? `${payload.target.slice(0, 32)}...` : payload.target;
+  return placeholderTitle(payload.target);
 }
 
 function hashTarget(target: string): string {
